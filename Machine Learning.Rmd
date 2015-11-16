@@ -1,0 +1,129 @@
+---
+title: "Machine Learning"
+author: "Baskaran Viswanathan"
+date: "November 15, 2015"
+output: html_document
+---
+
+
+Practical Machine Learning - Prediction Assignment Writeup
+==========================================================
+
+#Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+  
+For this assignment we have analyzed the provided data to predict the manner in which they did the exercise.
+To do this I have used of caret and randomForest Packages. This is allowed me to generate correct answers for
+each of the 20 test data cases provided in this assignment. I have used seed value for 
+consistent results.
+
+```{r Setting the Directory }
+setwd("~/GitHub/Coursera/Machine Learning")
+```
+
+
+```{r Loading the Library }
+library(Hmisc)
+library(caret)
+library(randomForest)
+library(foreach)
+library(doParallel)
+set.seed(2048)
+options(warn=-1)
+```
+
+```{r Setting the Options }
+set.seed(2048)
+options(warn=-1)
+```
+
+First, loading the downloaded data of training and test data from the provided link by COURSERA.
+Some values contained a "#DIV/0!" that I replaced with an NA value.
+
+```{r Loading Training and Testing}
+
+Training_data <- read.csv("pml-training.csv", na.strings=c("#DIV/0!") )
+Testing_data <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!") )
+
+```
+
+Casting all columns 8 to the end to be numeric.
+
+```{r Casting all columns}
+for(i in c(8:ncol(Training_data)-1)) {Training_data[,i] = as.numeric(as.character(Training_data[,i]))}
+
+for(i in c(8:ncol(Testing_data)-1)) {Testing_data[,i] = as.numeric(as.character(Testing_data[,i]))}
+```
+
+Some of the columns were mostly blank and those did not contribute well to the prediction.  I chose a feature
+set that only included complete columns.  We also remove user name, timestamps and windows.  
+
+Determine and display out feature set.
+
+```{r Determine and display out feature set}
+feature_set <- colnames(Training_data[colSums(is.na(Training_data)) == 0])[-(1:7)]
+model_data <- Training_data[feature_set]
+feature_set
+```
+
+We now have the model data built from our feature set.
+
+```{r Model Data Analysis }
+idx <- createDataPartition(y=model_data$classe, p=0.75, list=FALSE )
+training <- model_data[idx,]
+testing <- model_data[-idx,]
+```
+
+We now build 5 random forests with 150 trees each. We make use of parallel processing to build this
+model. I found several examples of how to perform parallel processing with random forests in R, this
+provided a great speedup.
+
+```{r Parallel Processing}
+registerDoParallel()
+x <- training[-ncol(training)]
+y <- training$classe
+
+rf <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+  randomForest(x, y, ntree=ntree) 
+}
+```
+
+Provide error reports for both training and test data.
+```{r Provide Error Reports}
+predictions1 <- predict(rf, newdata=training)
+confusionMatrix(predictions1,training$classe)
+
+predictions2 <- predict(rf, newdata=testing)
+confusionMatrix(predictions2,testing$classe)
+```
+
+Conclusions and Test Data Submit
+--------------------------------
+  
+  As can be seen from the confusion matrix this model is very accurate.  I did experiment with PCA 
+and other models, but did not get as good of accuracy. Because my test data was around 99% 
+accurate I expected nearly all of the submitted test cases to be correct.  It turned out they 
+were all correct.
+
+Prepare the submission. (using COURSERA provided code)
+
+```{r Prepare the submission. (using COURSERA provided code)}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+
+x <- Testing_data
+x <- x[feature_set[feature_set!='classe']]
+answers <- predict(rf, newdata=x)
+
+answers
+
+pml_write_files(answers)
+```
